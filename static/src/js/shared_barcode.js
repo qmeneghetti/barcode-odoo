@@ -1,100 +1,132 @@
 odoo.define('shared_barcode.pos', function (require) {
     'use strict';
-
-    const models = require('point_of_sale.models');
-    const screens = require('point_of_sale.screens');
-    const core = require('web.core');
-    const _t = core._t;
-    const Dialog = require('web.Dialog');
     
-    const _super_barcode_reader = models.BarcodeReader.prototype;
+    const { _t } = require('web.core');
+    const { Gui } = require('point_of_sale.Gui');
+    const BarcodeReader = require('point_of_sale.BarcodeReader');
+    const { patch } = require('web.utils');
+    const PosComponent = require('point_of_sale.PosComponent');
+    const ProductScreen = require('point_of_sale.ProductScreen');
+    const { useState, useContext } = owl.hooks;
+    const { usePos } = require('point_of_sale.custom_hooks');
+    const Registries = require('point_of_sale.Registries');
     
-    // Extender el lector de códigos de barras para manejar variantes
-    models.BarcodeReader = models.BarcodeReader.extend({
-        scan: function(code) {
+    // Parche para el BarcodeReader para manejar códigos de barras compartidos
+    patch(BarcodeReader.prototype, 'shared_barcode.BarcodeReader', {
+        /**
+         * @override
+         */
+        async _barcodeProductAction(code) {
             const self = this;
-            const parsed_result = this.barcode_parser.parse_barcode(code);
+            const product = await this._getProductByBarcode(code);
             
-            // Si es un código de producto
-            if (parsed_result.type === 'product') {
-                // Obtener el producto usando una llamada al servidor que soporta variantes
-                return this.pos.rpc({
+            if (!product) {
+                return;
+            }
+            
+            // Si el resultado es un objeto con multiple_variants, mostrar un selector
+            if (product.multiple_variants) {
+                this._showVariantSelectionPopup(product, code);
+                return true;
+            }
+            
+            // Llamada al método original para productos individuales
+            return this._super(...arguments);
+        },
+        
+        /**
+         * Método personalizado para obtener productos por código de barras con soporte para variantes
+         */
+        async _getProductByBarcode(code) {
+            try {
+                const result = await this.pos.env.services.rpc({
                     model: 'pos.config',
                     method: '_get_product_by_barcode',
                     args: [this.pos.config.id, code],
-                }).then(function(result) {
-                    if (!result) {
-                        return self.gui.show_popup('error', {
-                            'title': _t('Invalid Barcode'),
-                            'body':  _t('The barcode could not be found.'),
-                        });
-                    }
-                    
-                    // Si el resultado contiene múltiples variantes, mostrar un selector
-                    if (result.multiple_variants) {
-                        self._show_variant_selection_popup(result, code);
-                    } else {
-                        // Comportamiento normal para un solo producto
-                        return _super_barcode_reader.scan.call(self, code);
-                    }
                 });
-            } else {
-                // Para otros tipos de códigos, usar el comportamiento predeterminado
-                return _super_barcode_reader.scan.call(this, code);
+                return result;
+            } catch (error) {
+                console.error('Error al buscar producto por código de barras:', error);
+                Gui.showPopup('ErrorPopup', {
+                    title: _t('Error de Red'),
+                    body: _t('No se pudo verificar el código de barras. Compruebe su conexión e inténtelo de nuevo.')
+                });
+                return null;
             }
         },
         
-        _show_variant_selection_popup: function(result, barcode) {
+        /**
+         * Muestra un popup para seleccionar entre variantes de producto
+         */
+        _showVariantSelectionPopup(result, barcode) {
             const self = this;
+            const list = result.variants.map(variant => ({
+                id: variant.id,
+                label: variant.name + (variant.combination_name.length ? ` (${variant.combination_name.join(', ')})` : ''),
+                item: variant
+            }));
             
-            // Crear un diálogo con las variantes disponibles
-            new Dialog(this, {
+            Gui.showPopup('SelectionPopup', {
                 title: _t('Seleccionar Variante'),
-                size: 'medium',
-                buttons: _.map(result.variants, function(variant) {
-                    return {
-                        text: variant.name + ' (' + variant.combination_name.join(', ') + ')',
-                        classes: 'btn-primary',
-                        close: true,
-                        click: function() {
-                            // Cuando se selecciona una variante, obtener ese producto y añadirlo al pedido
-                            const product = self.pos.db.get_product_by_id(variant.id);
-                            if (product) {
-                                self.pos.get_order().add_product(product);
+                list: list,
+                confirmText: _t('Añadir'),
+                cancelText: _t('Cancelar'),
+                onselect: async (variant) => {
+                    const product = this.pos.db.get_product_by_id(variant.id);
+                    if (product) {
+                        const order = this.pos.get_order();
+                        order.add_product(product);
+                    } else {
+                        // Si el producto no está en la base de datos local, intentar cargarlo
+                        try {
+                            const productData = await this.pos.env.services.rpc({
+                                model: 'product.product',
+                                method: 'read',
+                                args: [[variant.id]],
+                            });
+                            if (productData && productData.length) {
+                                // Añadir el producto a la base de datos y al pedido
+                                this.pos.db.add_products([productData[0]]);
+                                const product = this.pos.db.get_product_by_id(variant.id);
+                                if (product) {
+                                    const order = this.pos.get_order();
+                                    order.add_product(product);
+                                }
                             }
+                        } catch (error) {
+                            console.error('Error al cargar el producto:', error);
+                            Gui.showPopup('ErrorPopup', {
+                                title: _t('Error'),
+                                body: _t('No se pudo cargar el producto seleccionado.')
+                            });
                         }
-                    };
-                }).concat([{
-                    text: _t('Cancelar'),
-                    close: true
-                }]),
-                $content: $('<div>').html(
-                    _t('Se encontraron múltiples variantes con el código de barras: ') + barcode + 
-                    _t('. Por favor, seleccione la variante correcta.')
-                ),
-            }).open();
+                    }
+                }
+            });
         }
     });
     
-    // Extender el modelo de producto para incluir la información del template
-    const _super_models = models.PosModel.prototype.models;
-    models.PosModel.prototype.models.forEach(function(model) {
-        if (model.model === 'product.product') {
-            const _super_product_loaded = model.loaded;
-            model.loaded = function(self, products) {
-                // Llamar al cargador original
-                _super_product_loaded.call(this, self, products);
-                
-                // Añadir una referencia al template_id en cada producto
-                for (let i = 0; i < products.length; i++) {
-                    const product = products[i];
-                    self.db.product_by_id[product.id].product_tmpl_id = product.product_tmpl_id;
+    // Extender el hook de inicialización del POS para cargar información de template_id
+    const PosModelExtend = (PosGlobalState) => class PosModelExtend extends PosGlobalState {
+        async _processData(loadedData) {
+            await super._processData(...arguments);
+            
+            // Añadir información de template_id a los productos
+            const products = loadedData['product.product'];
+            if (products) {
+                for (const product of products) {
+                    const productObj = this.db.get_product_by_id(product.id);
+                    if (productObj) {
+                        productObj.product_tmpl_id = product.product_tmpl_id;
+                    }
                 }
-            };
+            }
         }
-    });
+    };
+    
+    Registries.Model.extend('pos.global.state', PosModelExtend);
     
     return {
-        BarcodeReader: models.BarcodeReader,
+        BarcodeReader
     };
 });

@@ -74,27 +74,18 @@ class PosSession(models.Model):
     def _loader_params_product_product(self):
         """Extender el cargador de productos para incluir información sobre el código compartido"""
         result = super()._loader_params_product_product()
-        result['search_params']['fields'].append('product_tmpl_id')
+        if 'search_params' in result and 'fields' in result['search_params']:
+            if 'product_tmpl_id' not in result['search_params']['fields']:
+                result['search_params']['fields'].append('product_tmpl_id')
         return result
 
 
-class PosOrder(models.Model):
-    _inherit = 'pos.order'
-    
-    @api.model
-    def _order_fields(self, ui_order):
-        """Extender para manejar correctamente los productos con códigos compartidos"""
-        return super()._order_fields(ui_order)
-
-
-# Sobrescribimos el método de búsqueda por código de barras en el POS
 class PosConfig(models.Model):
     _inherit = 'pos.config'
     
+    @api.model
     def _get_product_by_barcode(self, barcode):
-        """Sobrescribir este método para manejar códigos de barras compartidos"""
-        self.ensure_one()
-        
+        """Método para buscar productos por código de barras con soporte para variantes compartidas"""
         # Comprueba primero si hay un producto único con este código de barras
         products = self.env['product.product'].search([
             ('barcode', '=', barcode),
@@ -106,24 +97,24 @@ class PosConfig(models.Model):
             
         if len(products) == 1:
             # Solo hay un producto con este código, devolvemos ese
-            return products[0]
+            return products[0].id
         else:
             # Hay múltiples productos (variantes) con este código
             # Verificamos si pertenecen al mismo template
             templates = products.mapped('product_tmpl_id')
             if len(templates) == 1 and templates.use_shared_barcode:
                 # Si son variantes del mismo producto y usan código compartido,
-                # devolvemos un diccionario especial para mostrar un selector de variantes en el POS
+                # devolvemos un diccionario especial para mostrar un selector de variantes
                 return {
                     'multiple_variants': True,
                     'template_id': templates.id,
                     'variants': [{
                         'id': p.id,
-                        'name': p.name,
+                        'name': p.display_name,
                         'combination_name': p.product_template_attribute_value_ids.mapped('name'),
                     } for p in products]
                 }
             else:
                 # Si hay conflicto (múltiples productos de diferentes templates),
-                # devolvemos el primero y mostramos una advertencia
-                return products[0]
+                # devolvemos el primero
+                return products[0].id
