@@ -5,17 +5,12 @@
         <record id="product_template_form_view_shared_barcode" model="ir.ui.view">
             <field name="name">product.template.form.shared.barcode</field>
             <field name="model">product.template</field>
-            <field name="inherit_id" ref="product.product_template_form_view"/>
+            <field name="inherit_id" ref="product.product_template_only_form_view"/>
             <field name="arch" type="xml">
-                <!-- Añadir los campos de código de barras compartido después del campo barcode existente -->
-                <xpath expr="//field[@name='barcode']" position="after">
+                <!-- Añadir los campos de código de barras compartido en la pestaña general -->
+                <xpath expr="//page[@name='general_information']//group[@name='group_general']" position="inside">
                     <field name="use_shared_barcode"/>
                     <field name="shared_barcode" attrs="{'invisible': [('use_shared_barcode', '=', False)], 'required': [('use_shared_barcode', '=', True)]}"/>
-                </xpath>
-                
-                <!-- Hacer el campo de código de barras normal solo visible/editable cuando no se usa el compartido -->
-                <xpath expr="//field[@name='barcode']" position="attributes">
-                    <attribute name="attrs">{'invisible': [('use_shared_barcode', '=', True)]}</attribute>
                 </xpath>
             </field>
         </record>
@@ -41,10 +36,10 @@
             <field name="model">product.template</field>
             <field name="inherit_id" ref="product.product_template_tree_view"/>
             <field name="arch" type="xml">
-                <xpath expr="//field[@name='default_code']" position="after">
-                    <field name="use_shared_barcode"/>
+                <field name="default_code" position="after">
+                    <field name="use_shared_barcode" optional="show"/>
                     <field name="shared_barcode" optional="show"/>
-                </xpath>
+                </field>
             </field>
         </record>
     </data>
