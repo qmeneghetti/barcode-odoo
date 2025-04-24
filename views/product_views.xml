@@ -10,7 +10,7 @@
                 <!-- Añadir los campos de código de barras compartido en la pestaña general -->
                 <xpath expr="//page[@name='general_information']//group[@name='group_general']" position="inside">
                     <field name="use_shared_barcode"/>
-                    <field name="shared_barcode" attrs="{'invisible': [('use_shared_barcode', '=', False)], 'required': [('use_shared_barcode', '=', True)]}"/>
+                    <field name="shared_barcode" invisible="not use_shared_barcode" required="use_shared_barcode"/>
                 </xpath>
             </field>
         </record>
