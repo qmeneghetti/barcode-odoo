@@ -68,6 +68,7 @@ class ProductProduct(models.Model):
                 ) % product.barcode)
 
 
+# Clase para extender la búsqueda de productos por código de barras
 class PosSession(models.Model):
     _inherit = 'pos.session'
     
@@ -80,41 +81,68 @@ class PosSession(models.Model):
         return result
 
 
+# Sobrescribir la búsqueda de productos por código de barras en el POS
 class PosConfig(models.Model):
     _inherit = 'pos.config'
+
+
+# Método principal para buscar productos por código de barras
+class BarcodeRule(models.Model):
+    _inherit = 'barcode.rule'
     
-    @api.model
-    def _get_product_by_barcode(self, barcode):
-        """Método para buscar productos por código de barras con soporte para variantes compartidas"""
-        # Comprueba primero si hay un producto único con este código de barras
-        products = self.env['product.product'].search([
-            ('barcode', '=', barcode),
-            ('available_in_pos', '=', True)
-        ])
+    def _get_product_variant_from_barcode(self, barcode):
+        """Sobrescribe el método estándar para buscar también en shared_barcode"""
+        # Intenta con el comportamiento estándar primero
+        product = super()._get_product_variant_from_barcode(barcode)
         
-        if not products:
-            return None
+        if product:
+            return product
             
-        if len(products) == 1:
-            # Solo hay un producto con este código, devolvemos ese
-            return products[0].id
-        else:
-            # Hay múltiples productos (variantes) con este código
-            # Verificamos si pertenecen al mismo template
-            templates = products.mapped('product_tmpl_id')
-            if len(templates) == 1 and templates.use_shared_barcode:
-                # Si son variantes del mismo producto y usan código compartido,
-                # devolvemos un diccionario especial para mostrar un selector de variantes
+        # Si no se encuentra, buscar en el shared_barcode de las plantillas
+        template = self.env['product.template'].search([
+            ('shared_barcode', '=', barcode),
+            ('use_shared_barcode', '=', True)
+        ], limit=1)
+        
+        if template and template.product_variant_ids:
+            # Si hay solo una variante, la devolvemos
+            if len(template.product_variant_ids) == 1:
+                return template.product_variant_ids[0]
+            
+            # Si hay múltiples variantes y todas están disponibles en el POS,
+            # devolvemos la primera por simplicidad
+            variants_in_pos = template.product_variant_ids.filtered(
+                lambda v: v.available_in_pos
+            )
+            
+            if variants_in_pos:
+                return variants_in_pos[0]
+        
+        return None
+
+
+# Extender el parseador de códigos de barras
+class BarcodeNomenclature(models.Model):
+    _inherit = 'barcode.nomenclature'
+    
+    def parse_barcode(self, barcode):
+        """Sobrescribe el método de análisis de códigos de barras para buscar en shared_barcode"""
+        result = super().parse_barcode(barcode)
+        
+        # Si no se encontró un producto, intentar con el shared_barcode
+        if result['type'] == 'error':
+            template = self.env['product.template'].search([
+                ('shared_barcode', '=', barcode),
+                ('use_shared_barcode', '=', True)
+            ], limit=1)
+            
+            if template and template.product_variant_ids:
+                variant = template.product_variant_ids[0]
                 return {
-                    'multiple_variants': True,
-                    'template_id': templates.id,
-                    'variants': [{
-                        'id': p.id,
-                        'name': p.display_name,
-                        'combination_name': p.product_template_attribute_value_ids.mapped('name'),
-                    } for p in products]
+                    'encoding': 'barcode',
+                    'type': 'product',
+                    'value': barcode,
+                    'data': variant,
                 }
-            else:
-                # Si hay conflicto (múltiples productos de diferentes templates),
-                # devolvemos el primero
-                return products[0].id
+        
+        return result

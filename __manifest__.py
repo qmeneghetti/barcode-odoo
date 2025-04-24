@@ -1,6 +1,6 @@
 {
     'name': 'Códigos de barras compartidos',
-    'version': '1.0',
+    'version': '1.1',
     'summary': 'Permite usar el mismo código de barras para diferentes variantes de producto',
     'description': """
         Este módulo modifica el comportamiento estándar de Odoo para permitir
@@ -10,7 +10,7 @@
     'author': 'Asteroid',
     'website': 'https://asteroid.cx',
     'license': 'LGPL-3',
-    'depends': ['product', 'stock', 'point_of_sale'],
+    'depends': ['product', 'stock', 'point_of_sale', 'barcodes'],
     'data': [
         'security/ir.model.access.csv',
         'views/product_views.xml',
