@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    <data>
+        <!-- Modificar la vista de formulario del producto -->
+        <record id="product_template_form_view_shared_barcode" model="ir.ui.view">
+            <field name="name">product.template.form.shared.barcode</field>
+            <field name="model">product.template</field>
+            <field name="inherit_id" ref="product.product_template_form_view"/>
+            <field name="arch" type="xml">
+                <!-- Añadir los campos de código de barras compartido después del campo barcode existente -->
+                <xpath expr="//field[@name='barcode']" position="after">
+                    <field name="use_shared_barcode"/>
+                    <field name="shared_barcode" attrs="{'invisible': [('use_shared_barcode', '=', False)], 'required': [('use_shared_barcode', '=', True)]}"/>
+                </xpath>
+                
+                <!-- Hacer el campo de código de barras normal solo visible/editable cuando no se usa el compartido -->
+                <xpath expr="//field[@name='barcode']" position="attributes">
+                    <attribute name="attrs">{'invisible': [('use_shared_barcode', '=', True)]}</attribute>
+                </xpath>
+            </field>
+        </record>
+        
+        <!-- Añadir los campos a la vista de búsqueda -->
+        <record id="product_template_search_view_shared_barcode" model="ir.ui.view">
+            <field name="name">product.template.search.shared.barcode</field>
+            <field name="model">product.template</field>
+            <field name="inherit_id" ref="product.product_template_search_view"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='name']" position="after">
+                    <field name="shared_barcode"/>
+                </xpath>
+                <filter name="filter_to_sell" position="after">
+                    <filter string="Con código compartido" name="shared_barcode" domain="[('use_shared_barcode', '=', True)]"/>
+                </filter>
+            </field>
+        </record>
+        
+        <!-- Modificar la vista de árbol/lista para mostrar si usa código compartido -->
+        <record id="product_template_tree_view_shared_barcode" model="ir.ui.view">
+            <field name="name">product.template.tree.shared.barcode</field>
+            <field name="model">product.template</field>
+            <field name="inherit_id" ref="product.product_template_tree_view"/>
+            <field name="arch" type="xml">
+                <xpath expr="//field[@name='default_code']" position="after">
+                    <field name="use_shared_barcode"/>
+                    <field name="shared_barcode" optional="show"/>
+                </xpath>
+            </field>
+        </record>
+    </data>
+</odoo>
