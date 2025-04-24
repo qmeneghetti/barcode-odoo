@@ -17,7 +17,7 @@
     ],
     'assets': {
         'point_of_sale.assets': [
-            'shared_barcode/static/src/js/shared_barcode.js',
+            'barcode-odoo/static/src/js/shared_barcode.js',
         ],
     },
     'installable': True,
